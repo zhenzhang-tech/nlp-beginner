@@ -1,4 +1,9 @@
 """对比 base / SFT / DPO 在同一指令上的输出。"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让 src 可导入
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
