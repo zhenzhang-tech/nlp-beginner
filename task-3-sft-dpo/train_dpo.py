@@ -17,17 +17,30 @@ CKPT_DIR = Path("ckpt/dpo")
 
 def load_dpo_data(path, limit=None):
     data = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            prompt = item.get("prompt") or item.get("instruction") or item.get("question")
-            chosen = item.get("chosen") or item.get("chosen_response")
-            rejected = item.get("rejected") or item.get("rejected_response")
-            if prompt and chosen and rejected:
-                data.append({"prompt": prompt, "chosen": chosen, "rejected": rejected})
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        items = json.loads(text)  # json 数组
+    except json.JSONDecodeError:
+        items = [json.loads(l) for l in text.splitlines() if l.strip()]  # jsonl
+
+    def get_value(x):
+        if isinstance(x, dict):
+            return x.get("value", x.get("content", ""))
+        return str(x) if x else ""
+
+    for item in items:
+        # prompt：优先 conversations 里的内容，其次 prompt/instruction
+        prompt = ""
+        convs = item.get("conversations") or item.get("prompt") or item.get("instruction")
+        if isinstance(convs, list):
+            parts = [get_value(c) for c in convs]
+            prompt = "\n".join(p for p in parts if p)
+        elif isinstance(convs, str):
+            prompt = convs
+        chosen = get_value(item.get("chosen"))
+        rejected = get_value(item.get("rejected"))
+        if prompt and chosen and rejected:
+            data.append({"prompt": prompt, "chosen": chosen, "rejected": rejected})
     return data[:limit] if limit else data
 
 
