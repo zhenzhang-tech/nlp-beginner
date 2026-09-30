@@ -1,6 +1,7 @@
 """SFT：在 Qwen2.5-0.5B 上注入 LoRA，用 MOSS 对话数据监督微调。"""
 import argparse
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,19 @@ MODEL_PATH = "models/Qwen2.5-0.5B"
 CKPT_DIR = Path("ckpt/sft")
 
 
+def _clean_human(s):
+    s = s.strip()
+    s = re.sub(r'^<\|Human\|>:\s*', '', s)
+    s = re.sub(r'<eoh>\s*$', '', s)
+    return s.strip()
+
+
+def _clean_moss(s):
+    s = s.strip()
+    s = re.sub(r'^<\|MOSS\|>:\s*', '', s)
+    return s.strip()
+
+
 def load_moss_messages(path, limit=None):
     """从 MOSS jsonl(.zip) 读取对话，返回 messages 列表。"""
     msgs_list = []
@@ -24,16 +38,33 @@ def load_moss_messages(path, limit=None):
             item = json.loads(line)
         except json.JSONDecodeError:
             return None
-        for key in ("messages", "conversation", "chat", "conversations"):
-            if key in item:
-                out = []
-                for m in item[key]:
-                    if isinstance(m, dict) and m.get("role") in ("user", "assistant", "system"):
-                        content = m.get("content", m.get("text", ""))
-                        if content:
-                            out.append({"role": m["role"], "content": content})
-                if out:
-                    return out
+        chat = item.get("chat")
+        # MOSS 格式：chat 是 dict，键 turn_1/turn_2，值为 {Human, MOSS, ...}
+        if isinstance(chat, dict):
+            out = []
+            meta = item.get("meta_instruction")
+            if meta:
+                out.append({"role": "system", "content": meta})
+            for k in sorted(chat.keys()):
+                turn = chat[k]
+                if not isinstance(turn, dict):
+                    continue
+                human = turn.get("Human") or turn.get("human")
+                moss = turn.get("MOSS") or turn.get("moss")
+                if human:
+                    out.append({"role": "user", "content": _clean_human(str(human))})
+                if moss:
+                    out.append({"role": "assistant", "content": _clean_moss(str(moss))})
+            return out if out else None
+        # 标准 role 格式：chat 是 list
+        if isinstance(chat, list):
+            out = []
+            for m in chat:
+                if isinstance(m, dict) and m.get("role") in ("user", "assistant", "system"):
+                    content = m.get("content", m.get("text", ""))
+                    if content:
+                        out.append({"role": m["role"], "content": content})
+            return out if out else None
         return None
 
     p = Path(path)
