@@ -19,8 +19,8 @@ class LoRALinear(nn.Module):
         self.scaling = alpha / r
         in_f, out_f = base.in_features, base.out_features
         # A: (r, in)，B: (out, r)，ΔW = B @ A
-        self.lora_A = nn.Parameter(torch.empty(r, in_f))
-        self.lora_B = nn.Parameter(torch.zeros(out_f, r))
+        self.lora_A = nn.Parameter(torch.empty(r, in_f, dtype=base.weight.dtype))
+        self.lora_B = nn.Parameter(torch.zeros(out_f, r, dtype=base.weight.dtype))
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
 
     def forward(self, x):
