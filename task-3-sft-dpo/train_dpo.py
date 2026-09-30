@@ -56,7 +56,8 @@ def to_text(x, tok):
 
 
 def load_model_with_lora(lora_path=None):
-    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.float16)
+    dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
+    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=dtype)
     if lora_path:
         inject_lora(model, target_modules=["q_proj", "v_proj"], r=8, alpha=16)
         ckpt = torch.load(lora_path, map_location="cpu")
@@ -78,9 +79,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/dpo/dpo_data.jsonl")
     ap.add_argument("--limit", type=int, default=1000)
-    ap.add_argument("--lr", type=float, default=5e-5)
+    ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--beta", type=float, default=0.1)
-    ap.add_argument("--max_length", type=int, default=512)
+    ap.add_argument("--max_length", type=int, default=256)
     ap.add_argument("--steps", type=int, default=200)
     args = ap.parse_args()
 
@@ -125,6 +126,7 @@ def main():
 
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
         optimizer.step()
 
         if (step + 1) % 20 == 0:
