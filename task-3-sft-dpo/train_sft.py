@@ -91,7 +91,7 @@ def main():
     ap.add_argument("--limit", type=int, default=10000)
     ap.add_argument("--r", type=int, default=8)
     ap.add_argument("--alpha", type=int, default=16)
-    ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--max_length", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=1)
@@ -102,7 +102,8 @@ def main():
     print(f"device: {device}")
 
     tok = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=torch.float16)
+    dtype = torch.bfloat16 if (device == "cuda" and torch.cuda.is_bf16_supported()) else torch.float16
+    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, torch_dtype=dtype)
     inject_lora(model, target_modules=["q_proj", "v_proj"], r=args.r, alpha=args.alpha)
     model.to(device)
     model.train()
@@ -146,6 +147,7 @@ def main():
                                    padded_labels[:, 1:].reshape(-1), ignore_index=-100)
             (loss / args.grad_accum).backward()
             if (i // args.batch_size + 1) % args.grad_accum == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 optimizer.zero_grad()
             total_loss += loss.item()
